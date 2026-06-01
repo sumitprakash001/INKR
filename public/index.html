@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inkr Draw Together</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <header>
+    <div class="logo"><span>Inkr -</span> draw together</div>
+    <nav>
+      <ul>
+        <li><a href="#">How it works</a></li>
+        <li><a href="#">About</a></li>
+        <li><a href="#">Fun Fact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Draw together</h1>
+      <p>- make something fun</p>
+
+      <div class="form-container">
+        <input type="text" placeholder="Name" />
+        <input type="text" placeholder="Username" />
+
+        <!-- 🟢 Replaced Button Section -->
+        <div class="room-box">
+          <button id="createBtn" class="create-room-btn">Create Private Room</button>
+          <div class="or-line">OR</div>
+          <input type="text" id="roomInput" class="room-input" placeholder="Enter Room Code" />
+          <button id="joinBtn" class="join-room-btn">Join Room</button>
+          <div id="roomLink" class="room-link"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="how-to-play">
+      <h2>How to Play</h2>
+      <div class="steps-container">
+        <div class="step">
+          <p>Create or join a room. Everyone in that room sees strokes in real time.</p>
+        </div>
+        <div class="step">
+          <p>Draw with your mouse or touch. Choose colors or brush size.</p>
+        </div>
+        <div class="step">
+          <p>Save as an image, or keep collaborating - perfect for quick ideation.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-section">
+      <h3>About</h3>
+      <div class="content-box">Inkr lets people draw together — simple and fun.</div>
+    </div>
+    <div class="footer-section">
+      <h3>Fun Fact</h3>
+      <div class="content-box">Sumit made this multiplayer drawing app with Socket.IO!</div>
+    </div>
+    <div class="footer-section">
+      <h3>Privacy Policy</h3>
+      <div class="content-box">Your drawings remain private to your room.</div>
+    </div>
+  </footer>
+
+  <script src="client.js"></script>
+</body>
+</html>

@@ -1,0 +1,555 @@
+<!-- <!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inkr Draw Together</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      font-family:
+        Arial, sans-serif;
+      background: #f3f4f6;
+    }
+
+    .topbar {
+      background: #111827;
+      color: #fff;
+      padding: 10px 16px;
+      font-weight: 600;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      height: calc(100vh - 44px);
+    }
+
+    .canvas-wrap {
+      background: #fff;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #fff;
+      touch-action: none;
+    }
+
+    .sidebar {
+      background: #0b1220;
+      color: #fff;
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .toolbox {
+      background: #101c33;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    .small-btn {
+      background: #06b6d4;
+      border: none;
+      color: #042027;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    #chatBox {
+      list-style: none;
+      padding: 0;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    #chatBox li {
+      margin: 5px 0;
+      padding: 8px;
+      border-radius: 5px;
+      max-width: 70%;
+      word-break: break-word;
+    }
+
+    .self {
+      background: rgb(9, 11, 9);
+      text-align: right;
+      margin-left: auto;
+    }
+
+    .other {
+      background: #0b0b16;
+      text-align: left;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="topbar">🖊️ Inkr — Draw Together</div>
+
+  <div class="container">
+    <div class="canvas-wrap">
+      <canvas id="board"></canvas>
+    </div>
+
+    <aside class="sidebar">
+      <div class="toolbox">
+        <h3>Tools</h3>
+        <label>Color: <input id="colorPicker" type="color" value="#111111"></label><br>
+        <label>Brush: <input id="sizeRange" type="range" min="1" max="40" value="4"> <span
+            id="sizeLabel">4</span></label><br>
+        <button id="eraserBtn" class="small-btn">Eraser</button>
+        <button id="clearBtn" class="small-btn">Clear</button>
+      </div>
+
+      <div class="toolbox">
+        <h3>Players</h3>
+        <div id="playerList"></div>
+      </div>
+
+      <div class="toolbox">
+        <h3>💬 Chat</h3>
+        <ul id="chatBox"></ul>
+        <input id="chatInput" type="text" placeholder="Type message..." style="width:75%">
+        <button id="sendChatBtn" class="small-btn">Send</button>
+      </div>
+    </aside>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    //  Extract roomId and username from URL
+    const params = new URLSearchParams(window.location.search);
+    const roomId = params.get("room") || "public";
+    const username = params.get("name") || "Guest";
+
+    // Join the room with username
+    socket.emit("joinRoom", { roomId, username });
+    console.log(`🟢 Joined room: ${roomId} as ${username}`);
+
+    // --- Drawing setup ---
+    const canvas = document.getElementById("board");
+    const ctx = canvas.getContext("2d");
+    const colorPicker = document.getElementById("colorPicker");
+    const sizeRange = document.getElementById("sizeRange");
+    const sizeLabel = document.getElementById("sizeLabel");
+    const eraserBtn = document.getElementById("eraserBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    let isDrawing = false;
+    let current = { color: colorPicker.value, size: 4, mode: "draw" };
+    let lastPos = { x: 0, y: 0 };
+
+    function resizeCanvas() {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    window.addEventListener("load", resizeCanvas);
+    window.addEventListener("resize", resizeCanvas);
+
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
+    canvas.addEventListener("mousedown", (e) => { isDrawing = true; lastPos = getPos(e); });
+    canvas.addEventListener("mousemove", (e) => {
+      if (!isDrawing) return;
+      const pos = getPos(e);
+      ctx.save();
+      if (current.mode === "erase") {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = current.color;
+      }
+      ctx.lineWidth = current.size;
+      ctx.beginPath();
+      ctx.moveTo(lastPos.x, lastPos.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      ctx.restore();
+
+      socket.emit("drawing", {
+        roomId, x1: lastPos.x, y1: lastPos.y,
+        x2: pos.x, y2: pos.y,
+        color: current.color, size: current.size, mode: current.mode
+      });
+      lastPos = pos;
+    });
+    canvas.addEventListener("mouseup", () => isDrawing = false);
+    canvas.addEventListener("mouseout", () => isDrawing = false);
+
+    // --- Drawing receive ---
+    socket.on("drawing", (data) => {
+      ctx.save();
+      if (data.mode === "erase") {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = data.color;
+      }
+      ctx.lineWidth = data.size;
+      ctx.beginPath();
+      ctx.moveTo(data.x1, data.y1);
+      ctx.lineTo(data.x2, data.y2);
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // --- Chat ---
+    const chatBox = document.getElementById("chatBox");
+    const chatInput = document.getElementById("chatInput");
+    const sendChatBtn = document.getElementById("sendChatBtn");
+
+    sendChatBtn.onclick = () => {
+      const msg = chatInput.value.trim();
+      if (!msg) return;
+      socket.emit("chat message", { roomId, username, msg });
+      chatInput.value = "";
+    };
+
+    socket.on("chat message", (data) => {
+      const li = document.createElement("li");
+      li.textContent = `${data.username}: ${data.msg}`;
+      li.className = data.username === username ? "self" : "other";
+      chatBox.appendChild(li);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+
+    // --- Player List ---
+    socket.on("updatePlayerList", (players) => {
+      document.getElementById("playerList").innerHTML = players.map(p => `<div>${p}</div>`).join("");
+    });
+
+    // 🧠 Show word for drawer
+    socket.on("yourWord", (word) => {
+      alert(`🎨 Your word to draw: ${word}`);
+      const status = document.createElement("div");
+      status.style.marginTop = "10px";
+      status.style.color = "#22c55e";
+      status.textContent = `You're drawing: ${word}`;
+      document.querySelector(".sidebar").prepend(status);
+    });
+
+    // 🧩 Notify who is drawing
+    socket.on("drawerInfo", (drawerName) => {
+      const status = document.createElement("div");
+      status.style.marginTop = "10px";
+      status.style.color = "#38bdf8";
+      status.textContent = `✏️ ${drawerName} is drawing...`;
+      document.querySelector(".sidebar").prepend(status);
+    });
+
+    // ✅ When someone guesses correctly
+    socket.on("correctGuess", ({ username, word }) => {
+      const li = document.createElement("li");
+      li.textContent = `🎉 ${username} guessed the word: ${word}!`;
+      li.style.color = "#22c55e";
+      chatBox.appendChild(li);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+  </script>
+</body>
+
+</html> -->
+
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inkr — Draw Together</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f3f4f6;
+    }
+
+    .topbar {
+      background: #111827;
+      color: #fff;
+      padding: 10px 16px;
+      font-weight: 600;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      height: calc(100vh - 44px);
+    }
+
+    .canvas-wrap { background: #fff; }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #fff;
+      touch-action: none;
+    }
+
+    .sidebar {
+      background: #0b1220;
+      color: #fff;
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .toolbox {
+      background: #101c33;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    .small-btn {
+      background: #06b6d4;
+      border: none;
+      color: #042027;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    /* Chat styling */
+    #chatBox {
+      list-style: none;
+      padding: 0;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    #chatBox li {
+      margin: 5px 0;
+      padding: 8px;
+      border-radius: 5px;
+      max-width: 70%;
+      word-break: break-word;
+    }
+    .self {
+      background: #22c55e;
+      text-align: right;
+      margin-left: auto;
+      color: #042027;
+    }
+    .other {
+      background: #38bdf8;
+      text-align: left;
+      color: #042027;
+    }
+
+    /* Word display */
+    #currentWordBox {
+      background: #101c33;
+      color: #22c55e;
+      padding: 10px;
+      border-radius: 6px;
+      text-align: center;
+      font-weight: 600;
+      font-size: 16px;
+      box-shadow: inset 0 0 6px rgba(0,255,100,0.2);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="topbar">🖊️ Inkr — Draw Together</div>
+
+  <div class="container">
+    <div class="canvas-wrap">
+      <canvas id="board"></canvas>
+    </div>
+
+    <aside class="sidebar">
+      <div class="toolbox">
+        <h3>🧰 Tools</h3>
+        <label>Color: <input id="colorPicker" type="color" value="#111111"></label><br>
+        <label>Brush: <input id="sizeRange" type="range" min="1" max="40" value="4">
+          <span id="sizeLabel">4</span></label><br>
+        <button id="eraserBtn" class="small-btn">Eraser</button>
+        <button id="clearBtn" class="small-btn">Clear</button>
+      </div>
+
+      <!-- 🎯 Current Word Display -->
+      <div class="toolbox">
+        <h3>🎯 Current Word</h3>
+        <div id="currentWordBox">Waiting for drawer...</div>
+      </div>
+
+      <!-- 👥 Player List -->
+      <div class="toolbox">
+        <h3>👥 Players</h3>
+        <div id="playerList"></div>
+      </div>
+
+      <!-- 💬 Chat Section -->
+      <div class="toolbox">
+        <h3>💬 Chat</h3>
+        <ul id="chatBox"></ul>
+        <input id="chatInput" type="text" placeholder="Type message..." style="width:75%">
+        <button id="sendChatBtn" class="small-btn">Send</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Socket -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    // 🧩 Extract room and username from URL
+    const params = new URLSearchParams(window.location.search);
+    const roomId = params.get("room") || "public";
+    const username = params.get("name") || "Guest";
+
+    socket.emit("joinRoom", { roomId, username });
+    console.log(`🟢 Joined room: ${roomId} as ${username}`);
+
+    // --- Drawing Setup ---
+    const canvas = document.getElementById("board");
+    const ctx = canvas.getContext("2d");
+    const colorPicker = document.getElementById("colorPicker");
+    const sizeRange = document.getElementById("sizeRange");
+    const sizeLabel = document.getElementById("sizeLabel");
+    const eraserBtn = document.getElementById("eraserBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    let isDrawing = false;
+    let current = { color: colorPicker.value, size: 4, mode: "draw" };
+    let lastPos = { x: 0, y: 0 };
+
+    function resizeCanvas() {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    window.addEventListener("load", resizeCanvas);
+    window.addEventListener("resize", resizeCanvas);
+
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
+    canvas.addEventListener("mousedown", (e) => { isDrawing = true; lastPos = getPos(e); });
+    canvas.addEventListener("mousemove", (e) => {
+      if (!isDrawing) return;
+      const pos = getPos(e);
+      ctx.save();
+      if (current.mode === "erase") {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = current.color;
+      }
+      ctx.lineWidth = current.size;
+      ctx.beginPath();
+      ctx.moveTo(lastPos.x, lastPos.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      ctx.restore();
+
+      socket.emit("drawing", {
+        roomId, x1: lastPos.x, y1: lastPos.y,
+        x2: pos.x, y2: pos.y,
+        color: current.color, size: current.size, mode: current.mode
+      });
+      lastPos = pos;
+    });
+    canvas.addEventListener("mouseup", () => isDrawing = false);
+    canvas.addEventListener("mouseout", () => isDrawing = false);
+
+    socket.on("drawing", (data) => {
+      ctx.save();
+      if (data.mode === "erase") {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.strokeStyle = "rgba(0,0,0,1)";
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = data.color;
+      }
+      ctx.lineWidth = data.size;
+      ctx.beginPath();
+      ctx.moveTo(data.x1, data.y1);
+      ctx.lineTo(data.x2, data.y2);
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // --- Chat System ---
+    const chatBox = document.getElementById("chatBox");
+    const chatInput = document.getElementById("chatInput");
+    const sendChatBtn = document.getElementById("sendChatBtn");
+
+    sendChatBtn.onclick = () => {
+      const msg = chatInput.value.trim();
+      if (!msg) return;
+      socket.emit("chat message", { roomId, username, msg });
+      chatInput.value = "";
+    };
+
+    socket.on("chat message", (data) => {
+      const li = document.createElement("li");
+      li.textContent = `${data.username}: ${data.msg}`;
+      li.className = data.username === username ? "self" : "other";
+      chatBox.appendChild(li);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+
+    // --- Player List ---
+    socket.on("updatePlayerList", (players) => {
+      document.getElementById("playerList").innerHTML =
+        players.map(p => `<div>${p}</div>`).join("");
+    });
+
+    // --- Word Display in Sidebar ---
+    const currentWordBox = document.getElementById("currentWordBox");
+
+    // 🎨 Word shown for drawer only
+    socket.on("yourWord", (word) => {
+      currentWordBox.style.color = "#22c55e";
+      currentWordBox.textContent = `You are drawing: ${word}`;
+    });
+
+    // ✏️ Others see who is drawing
+    socket.on("drawerInfo", (drawerName) => {
+      currentWordBox.style.color = "#38bdf8";
+      currentWordBox.textContent = `✏️ ${drawerName} is drawing...`;
+    });
+
+    // 🎉 When guessed correctly
+    socket.on("correctGuess", ({ username, word }) => {
+      const li = document.createElement("li");
+      li.textContent = `🎉 ${username} guessed the word: ${word}!`;
+      li.style.color = "#22c55e";
+      chatBox.appendChild(li);
+      chatBox.scrollTop = chatBox.scrollHeight;
+      currentWordBox.textContent = `✔️ ${username} guessed it!`;
+      currentWordBox.style.color = "#22c55e";
+    });
+  </script>
+</body>
+</html>
